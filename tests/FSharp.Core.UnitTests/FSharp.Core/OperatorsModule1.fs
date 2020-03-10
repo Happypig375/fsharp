@@ -10,6 +10,12 @@ open SystematicUnitTests.LibraryTestFx
 open NUnit.Framework
 open Microsoft.FSharp.Core.Operators.Checked
 
+type EnumSequential = A = 1 | B = 2 | C = 3 | D = 4
+type EnumReverse = A = 3y | B = 2y | C = 1y | D = 0y
+type EnumDuplicate = A = 1UL | B = 1UL | C = 2UL | D = 2UL
+type EnumExtreme = A = 1000 | B = -2147483648 | C = -314 | D = 2147483647
+type EnumChar = A = 'A' | B = '\000' | C = 'C' | D = 'D'
+
 [<TestFixture>]
 type OperatorsModule1() =
 
@@ -331,6 +337,50 @@ type OperatorsModule1() =
         
         
         ()
+        
+    [<Test>]
+    member this.UnknownEnum() =
+        let matchValid = function
+            | UnknownEnum _ -> Assert.Fail "UnknownEnum should not match a defined value"
+            | _ -> ()
+        let matchInvalid originalValue = function
+            | UnknownEnum x -> Assert.AreEqual(x, originalValue)
+            | _ -> Assert.Fail "UnknownEnum should match an undefined value"
+        matchValid EnumSequential.A
+        matchValid EnumSequential.B
+        matchValid EnumSequential.C
+        matchValid EnumSequential.D
+        matchInvalid 0 <| enum<EnumSequential> 0
+        matchInvalid -2147483648 <| enum<EnumSequential> -2147483648
+
+        matchValid EnumReverse.A
+        matchValid EnumReverse.B
+        matchValid EnumReverse.C
+        matchValid EnumReverse.D
+        matchValid <| enum<EnumReverse> 0
+        matchInvalid 127y <| enum<EnumReverse> 127
+        matchInvalid -128y <| enum<EnumReverse> -128
+
+        matchValid EnumDuplicate.A
+        matchValid EnumDuplicate.B
+        matchValid EnumDuplicate.C
+        matchValid EnumDuplicate.D
+        matchInvalid 0UL <| enum<EnumDuplicate> 0
+        matchInvalid 3UL <| enum<EnumDuplicate> 3
+        
+        matchValid EnumExtreme.A
+        matchValid EnumExtreme.B
+        matchValid EnumExtreme.C
+        matchValid EnumExtreme.D
+        matchInvalid 0UL <| enum<EnumDuplicate> 0
+        matchInvalid 3UL <| enum<EnumDuplicate> 3
+        
+        matchValid EnumChar.A
+        matchValid EnumChar.B
+        matchValid EnumChar.C
+        matchValid EnumChar.D
+        matchInvalid '\001' <| enum<EnumChar> 1
+        matchInvalid 'B' <| enum<EnumChar> (int 'B')
         
     [<Test>]
     member this.OptimizedRangesGetArraySlice() =

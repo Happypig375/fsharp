@@ -2750,11 +2750,17 @@ namespace Microsoft.FSharp.Core
         [<CompiledName("ToChar")>]
         val inline char        : value:^T -> char      when ^T : (static member op_Explicit : ^T -> char)        and default ^T : int
 
+        /// <summary>An active pattern to match undefined values of an enumeration type.</summary>
+        /// <param name="value">The input enumeration value.</param>
+        /// <returns>Some if the input value is not defined in the enumeration type, containing its underlying value.</returns>
+        [<CompiledName("UnknownEnumPattern")>]
+        val (|UnknownEnum|_|): value : 'Enum -> 'Underlying option when 'Enum : enum<'Underlying>
+
         /// <summary>An active pattern to match values of type <c>System.Collections.Generic.KeyValuePair</c></summary>
         /// <param name="keyValuePair">The input key/value pair.</param>
         /// <returns>A tuple containing the key and value.</returns>
         [<CompiledName("KeyValuePattern")>]
-        val ( |KeyValue| ): keyValuePair:KeyValuePair<'Key,'Value> -> 'Key * 'Value
+        val (|KeyValue|): keyValuePair:KeyValuePair<'Key,'Value> -> 'Key * 'Value
 
         [<AutoOpen>]
         [<Experimental("Experimental library feature, requires '--langversion:preview'")>]

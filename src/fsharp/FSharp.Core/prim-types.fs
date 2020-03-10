@@ -3739,8 +3739,20 @@ namespace Microsoft.FSharp.Core
         [<CompiledName("ToEnum")>]
         let inline enum< ^T when ^T : enum<int32> > (value:int32) : ^T = EnumOfValue value
 
+        type EnumValuesLookup<'T>() =
+            static member val Values =
+                let values = typeof<'T>.GetEnumValues() :?> 'T[]
+                Array.Sort(values)
+                values
+            
+        [<CompiledName("UnknownEnumPattern")>]
+        let (|UnknownEnum|_|) (value : 'Enum when 'Enum : enum<_>) = 
+            if Array.BinarySearch(EnumValuesLookup<'Enum>.Values, value) = -1 then
+                None
+            else Some <| EnumToValue value
+
         [<CompiledName("KeyValuePattern")>]
-        let ( |KeyValue| ) (keyValuePair : KeyValuePair<'T,'U>) = (keyValuePair.Key, keyValuePair.Value)
+        let (|KeyValue|) (keyValuePair : KeyValuePair<'T,'U>) = (keyValuePair.Key, keyValuePair.Value)
 
         [<CompiledName("Infinity")>]
         let infinity = System.Double.PositiveInfinity
