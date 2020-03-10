@@ -352,14 +352,13 @@ type OperatorsModule1() =
         matchValid EnumSequential.D
         matchInvalid 0 <| enum<EnumSequential> 0
         matchInvalid -2147483648 <| enum<EnumSequential> -2147483648
-
-        matchValid EnumReverse.A
-        matchValid EnumReverse.B
-        matchValid EnumReverse.C
-        matchValid EnumReverse.D
-        matchValid <| enum<EnumReverse> 0
-        matchInvalid 127y <| enum<EnumReverse> 127
-        matchInvalid -128y <| enum<EnumReverse> -128
+        
+        for i in int System.SByte.MinValue .. int System.SByte.MaxValue do
+            match enum<EnumReverse> i with
+            | UnknownEnum x ->
+                if 0y <= x && x <= 3y then Assert.Fail "UnknownEnum should not match a defined value"
+            | x ->
+                if x < 0 || 3 < x then Assert.Fail "UnknownEnum should match an undefined value"
 
         matchValid EnumDuplicate.A
         matchValid EnumDuplicate.B
