@@ -650,6 +650,7 @@ type public TcGlobals(compilingFslib: bool, ilg:ILGlobals, fslibCcu: CcuThunk, d
 
   let v_char_operator_info         = makeIntrinsicValRef(fslib_MFOperators_nleref,                             "char"                                 , None                 , Some "ToChar",    [vara],   ([[varaTy]], v_char_ty)) 
   let v_enum_operator_info         = makeIntrinsicValRef(fslib_MFOperators_nleref,                             "enum"                                 , None                 , Some "ToEnum",    [vara],   ([[varaTy]], v_enum_ty)) 
+  let v_unknownenum_pattern_info   = makeIntrinsicValRef(fslib_MFOperators_nleref,                             "|UnknownEnum|_|"                      , None                 , Some "UnknownEnumPattern", [vara;varb], ([[varaTy]], mkOptionTy varbTy))
 
   let v_hash_info                  = makeIntrinsicValRef(fslib_MFOperators_nleref,                             "hash"                                 , None                 , Some "Hash"   , [vara],     ([[varaTy]], v_int_ty))
   let v_box_info                   = makeIntrinsicValRef(fslib_MFOperators_nleref,                             "box"                                  , None                 , Some "Box"    , [vara],     ([[varaTy]], v_obj_ty))
@@ -1294,6 +1295,7 @@ type public TcGlobals(compilingFslib: bool, ilg:ILGlobals, fslibCcu: CcuThunk, d
 
   member __.char_operator_info       = v_char_operator_info
   member __.enum_operator_info       = v_enum_operator_info
+  member __.unknownenum_pattern_info = v_unknownenum_pattern_info
 
   member val compare_operator_vref    = ValRefForIntrinsic v_compare_operator_info
   member val equals_operator_vref    = ValRefForIntrinsic v_equals_operator_info
@@ -1342,6 +1344,7 @@ type public TcGlobals(compilingFslib: bool, ilg:ILGlobals, fslibCcu: CcuThunk, d
   member val nameof_vref                = ValRefForIntrinsic v_nameof_info
   member val typedefof_vref             = ValRefForIntrinsic v_typedefof_info
   member val enum_vref                  = ValRefForIntrinsic v_enum_operator_info
+  member val unknownenum_vref           = ValRefForIntrinsic v_unknownenum_pattern_info
   member val enumOfValue_vref           = ValRefForIntrinsic v_enumOfValue_info
   member val range_op_vref              = ValRefForIntrinsic v_range_op_info
   member val range_step_op_vref         = ValRefForIntrinsic v_range_step_op_info

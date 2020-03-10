@@ -191,6 +191,21 @@ let ilFieldToTastConst lit =
     | ILFieldInit.Single f -> Const.Single f
     | ILFieldInit.Double f -> Const.Double f
 
+let enumValuesOfEnumTyconRef (tcref:TyconRef) =
+    // We must distinguish between F#-defined enums and other .NET enums, as they are represented differently in the TAST
+    if tcref.IsILEnumTycon then
+        let (TILObjectReprData(_, _, tdef)) = tcref.ILTyconInfo
+        tdef.Fields.AsList
+        |> Seq.choose (fun ilField ->
+            if ilField.IsStatic then
+                ilField.LiteralValue |> Option.map (fun ilValue ->
+                    ilField.Name, ilFieldToTastConst ilValue)
+            else None)
+    else
+        tcref.AllFieldsArray |> Seq.choose (fun fsField ->
+            match fsField.rfield_const, fsField.rfield_static with
+            | Some fsFieldValue, true -> Some (fsField.rfield_id.idText, fsFieldValue)
+            | _ -> None)
 exception CannotRefute
 let RefuteDiscrimSet g m path discrims =
     let mkUnknown ty = snd(mkCompGenLocal m "_" ty)
@@ -260,23 +275,8 @@ let RefuteDiscrimSet g m path discrims =
             | Some c ->
                 match tryTcrefOfAppTy g ty with
                 | ValueSome tcref when tcref.IsEnumTycon ->
-                    // We must distinguish between F#-defined enums and other .NET enums, as they are represented differently in the TAST
-                    let enumValues =
-                        if tcref.IsILEnumTycon then
-                            let (TILObjectReprData(_, _, tdef)) = tcref.ILTyconInfo
-                            tdef.Fields.AsList
-                            |> Seq.choose (fun ilField ->
-                                if ilField.IsStatic then
-                                    ilField.LiteralValue |> Option.map (fun ilValue ->
-                                        ilField.Name, ilFieldToTastConst ilValue)
-                                else None)
-                        else
-                            tcref.AllFieldsArray |> Seq.choose (fun fsField ->
-                                match fsField.rfield_const, fsField.rfield_static with
-                                | Some fsFieldValue, true -> Some (fsField.rfield_id.idText, fsFieldValue)
-                                | _ -> None)
-
-                    let nonCoveredEnumValues = Seq.tryFind (fun (_, fldValue) -> not (consts.Contains fldValue)) enumValues
+                    let nonCoveredEnumValues =
+                        Seq.tryFind (fun (_, fldValue) -> not (consts.Contains fldValue)) <| enumValuesOfEnumTyconRef tcref
 
                     match nonCoveredEnumValues with
                     | None -> Expr.Const (c, m, ty), true
@@ -1052,15 +1052,38 @@ let CompilePatternBasic
                  // Convert active pattern edges to tests on results data
                  let discrim' =
                      match discrim with
-                     | DecisionTreeTest.ActivePatternCase(_pexp, resTys, _apatVrefOpt, idx, apinfo) ->
+                     | DecisionTreeTest.ActivePatternCase(_pexp, resTys, apatVrefOpt, idx, apinfo) ->
                          let aparity = apinfo.Names.Length
-                         let total = apinfo.IsTotal
-                         if not total && aparity > 1 then
-                             error(Error(FSComp.SR.patcPartialActivePatternsGenerateOneResult(), m))
-
-                         if not total then DecisionTreeTest.UnionCase(mkSomeCase g, resTys)
-                         elif aparity <= 1 then DecisionTreeTest.Const(Const.Unit)
-                         else DecisionTreeTest.UnionCase(mkChoiceCaseRef g m aparity idx, resTys)
+                         match apinfo.IsTotal, aparity > 1 with
+                         | false, false -> 
+                             match apatVrefOpt with
+                             | Some (valRef, [enumType; _underlyingType]) when valRefEq g valRef g.unknownenum_vref ->
+                                 let rec hasAllValuesBeenMatched = function
+                                 | TType_var v ->
+                                     match v.Solution with
+                                     | Some s -> hasAllValuesBeenMatched s
+                                     | None -> false
+                                 | TType_app (tyconRef, _) ->
+                                     let enumSet =
+                                         enumValuesOfEnumTyconRef tyconRef
+                                         |> Seq.map snd
+                                         |> Set.ofSeq
+                                     refuted |> List.exists (function
+                                         | RefutedWhenClause -> false
+                                         | RefutedInvestigation (_, decisions) ->
+                                             let matchedSet =
+                                                 decisions
+                                                 |> Seq.choose (function DecisionTreeTest.Const c -> Some c | _ -> None)
+                                                 |> Set.ofSeq
+                                             Set.isSuperset matchedSet enumSet)
+                                 | _ -> failwith "typInst does not match UnknownEnum signature"
+                                 if hasAllValuesBeenMatched enumType then
+                                     DecisionTreeTest.Const(Const.Unit)
+                                 else DecisionTreeTest.UnionCase(mkSomeCase g, resTys)
+                             | _ -> DecisionTreeTest.UnionCase(mkSomeCase g, resTys)
+                         | false, true -> error(Error(FSComp.SR.patcPartialActivePatternsGenerateOneResult(), m))
+                         | true, false -> DecisionTreeTest.Const(Const.Unit)
+                         | true, true -> DecisionTreeTest.UnionCase(mkChoiceCaseRef g m aparity idx, resTys)
                      | _ -> discrim
 
                  // Project a successful edge through the frontiers.
