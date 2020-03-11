@@ -482,7 +482,7 @@ let canCompactConstantClass c =
     | _ -> false
 
 /// Can two discriminators in a 'column' be decided simultaneously?
-let discrimsHaveSameSimultaneousClass g d1 d2 =
+let discrimsHaveSameSimultaneousClass (g:TcGlobals) d1 d2 =
     match d1, d2 with
     | DecisionTreeTest.Const _,              DecisionTreeTest.Const _
     | DecisionTreeTest.IsNull,               DecisionTreeTest.IsNull
@@ -490,6 +490,9 @@ let discrimsHaveSameSimultaneousClass g d1 d2 =
     | DecisionTreeTest.UnionCase _,    DecisionTreeTest.UnionCase _  -> true
 
     | DecisionTreeTest.IsInst _, DecisionTreeTest.IsInst _ -> false
+    | DecisionTreeTest.ActivePatternCase (_, _, Some (vref, _), _, _), DecisionTreeTest.Const _
+    | DecisionTreeTest.Const _, DecisionTreeTest.ActivePatternCase (_, _, Some (vref, _), _, _)
+        when valRefEq g vref g.unknownenum_vref -> true
     | DecisionTreeTest.ActivePatternCase (_, _, apatVrefOpt1, _, _),        DecisionTreeTest.ActivePatternCase (_, _, apatVrefOpt2, _, _) ->
         match apatVrefOpt1, apatVrefOpt2 with
         | Some (vref1, tinst1), Some (vref2, tinst2) -> valRefEq g vref1 vref2  && not (doesActivePatternHaveFreeTypars g vref1) && List.lengthsEqAndForall2 (typeEquiv g) tinst1 tinst2
@@ -711,19 +714,21 @@ let rec isPatternPartial p =
     | TPat_isinst _ -> false
     | TPat_error _ -> false
 
-let rec erasePartialPatterns inpp =
+let rec erasePartialPatterns (g:TcGlobals) inpp =
     match inpp with
     | TPat_query ((expr, resTys, apatVrefOpt, idx, apinfo), p, m) ->
-         if apinfo.IsTotal then TPat_query ((expr, resTys, apatVrefOpt, idx, apinfo), erasePartialPatterns p, m)
-         else TPat_disjs ([], m) (* always fail *)
-    | TPat_as (p, x, m) -> TPat_as (erasePartialPatterns p, x, m)
-    | TPat_disjs (ps, m) -> TPat_disjs(erasePartials ps, m)
-    | TPat_conjs(ps, m) -> TPat_conjs(erasePartials ps, m)
-    | TPat_tuple (tupInfo, ps, x, m) -> TPat_tuple(tupInfo, erasePartials ps, x, m)
-    | TPat_exnconstr(x, ps, m) -> TPat_exnconstr(x, erasePartials ps, m)
-    | TPat_array (ps, x, m) -> TPat_array (erasePartials ps, x, m)
-    | TPat_unioncase (x, y, ps, m) -> TPat_unioncase (x, y, erasePartials ps, m)
-    | TPat_recd (x, y, ps, m) -> TPat_recd (x, y, List.map erasePartialPatterns ps, m)
+         if apinfo.IsTotal then TPat_query ((expr, resTys, apatVrefOpt, idx, apinfo), erasePartialPatterns g p, m)
+         else match apatVrefOpt with
+         | Some (vref, _) when valRefEq g vref g.unknownenum_vref -> inpp
+         | _ -> TPat_disjs ([], m) (* always fail *)
+    | TPat_as (p, x, m) -> TPat_as (erasePartialPatterns g p, x, m)
+    | TPat_disjs (ps, m) -> TPat_disjs(erasePartials g ps, m)
+    | TPat_conjs(ps, m) -> TPat_conjs(erasePartials g ps, m)
+    | TPat_tuple (tupInfo, ps, x, m) -> TPat_tuple(tupInfo, erasePartials g ps, x, m)
+    | TPat_exnconstr(x, ps, m) -> TPat_exnconstr(x, erasePartials g ps, m)
+    | TPat_array (ps, x, m) -> TPat_array (erasePartials g ps, x, m)
+    | TPat_unioncase (x, y, ps, m) -> TPat_unioncase (x, y, erasePartials g ps, m)
+    | TPat_recd (x, y, ps, m) -> TPat_recd (x, y, erasePartials g ps, m)
     | TPat_const _
     | TPat_wild _
     | TPat_range _
@@ -731,8 +736,8 @@ let rec erasePartialPatterns inpp =
     | TPat_isinst _
     | TPat_error _ -> inpp
 
-and erasePartials inps =
-    List.map erasePartialPatterns inps
+and erasePartials g inps =
+    List.map (erasePartialPatterns g) inps
 
 
 //---------------------------------------------------------------------------
@@ -912,7 +917,7 @@ let CompilePatternBasic
 
     /// Select the set of discriminators which we can handle in one test, or as a series of iterated tests,
     /// e.g. in the case of TPat_isinst. Ensure we only take at most one class of `TPat_query` at a time.
-    /// Record the rule numbers so we know which rule the TPat_query cam from, so that when we project through
+    /// Record the rule numbers so we know which rule the TPat_query came from, so that when we project through
     /// the frontier we only project the right rule.
     and ChooseSimultaneousEdges frontiers path =
         frontiers |> chooseSimultaneousEdgeSet None (fun prevOpt (Frontier (i', active', _)) ->
@@ -1057,7 +1062,7 @@ let CompilePatternBasic
                          match apinfo.IsTotal, aparity > 1 with
                          | false, false -> 
                              match apatVrefOpt with
-                             | Some (valRef, [enumType; _underlyingType]) when valRefEq g valRef g.unknownenum_vref ->
+                             | Some (valRef, [_enumType; _underlyingType]) when valRefEq g valRef g.unknownenum_vref ->
                                  let rec hasAllValuesBeenMatched = function
                                  | TType_var v ->
                                      match v.Solution with
@@ -1077,9 +1082,10 @@ let CompilePatternBasic
                                                  |> Set.ofSeq
                                              Set.isSuperset matchedSet enumSet)
                                  | _ -> failwith "typInst does not match UnknownEnum signature"
-                                 if hasAllValuesBeenMatched enumType then
-                                     DecisionTreeTest.Const(Const.Unit)
-                                 else DecisionTreeTest.UnionCase(mkSomeCase g, resTys)
+                                 //if hasAllValuesBeenMatched enumType then
+                                 //    DecisionTreeTest.Const(Const.Unit)
+                                 //else
+                                 DecisionTreeTest.UnionCase(mkSomeCase g, resTys)
                              | _ -> DecisionTreeTest.UnionCase(mkSomeCase g, resTys)
                          | false, true -> error(Error(FSComp.SR.patcPartialActivePatternsGenerateOneResult(), m))
                          | true, false -> DecisionTreeTest.Const(Const.Unit)
@@ -1365,7 +1371,7 @@ let rec CompilePattern  g denv amap exprm matchm warnOnUnused actionOnFailure (o
         // First make sure we generate at least some of the obvious incomplete match warnings.
         let warnOnUnused = false // we can't turn this on since we're pretending all partials fail in order to control the complexity of this.
         let warnOnIncomplete = true
-        let clausesPretendAllPartialFail = List.collect (fun (TClause(p, whenOpt, tg, m)) -> [TClause(erasePartialPatterns p, whenOpt, tg, m)]) clausesL
+        let clausesPretendAllPartialFail = List.collect (fun (TClause(p, whenOpt, tg, m)) -> [TClause(erasePartialPatterns g p, whenOpt, tg, m)]) clausesL
         let _ = CompilePatternBasic g denv amap exprm matchm warnOnUnused warnOnIncomplete actionOnFailure (origInputVal, origInputValTypars, origInputExprOpt) clausesPretendAllPartialFail inputTy resultTy
         let warnOnIncomplete = false
 
